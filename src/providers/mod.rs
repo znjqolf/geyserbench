@@ -17,12 +17,12 @@ use crate::{
 
 pub mod arpc;
 pub mod common;
+pub mod deshred;
 pub mod jetstream;
 pub mod shreder;
 pub mod shredstream;
 pub mod thor;
 pub mod yellowstone;
-mod yellowstone_client;
 
 pub trait GeyserProvider: Send + Sync {
     fn process(
@@ -36,6 +36,7 @@ pub trait GeyserProvider: Send + Sync {
 pub fn create_provider(kind: &EndpointKind) -> Box<dyn GeyserProvider> {
     match kind {
         EndpointKind::Yellowstone => Box::new(yellowstone::YellowstoneProvider),
+        EndpointKind::Deshred => Box::new(deshred::DeshredProvider),
         EndpointKind::Arpc => Box::new(arpc::ArpcProvider),
         EndpointKind::Thor => Box::new(thor::ThorProvider),
         EndpointKind::Shreder => Box::new(shreder::ShrederProvider),

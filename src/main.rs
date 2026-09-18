@@ -317,6 +317,11 @@ async fn main() -> Result<()> {
     if !run_aborted {
         if let Some(summary) = run_summary.as_ref() {
             analysis::display_run_summary(summary);
+            analysis::display_deshred_deltas(
+                comparator.as_ref(),
+                &config.endpoint,
+                config.config.commitment,
+            );
             let metrics_json = analysis::build_metrics_report(summary);
             debug!(metrics = %metrics_json, "Computed run metrics");
         }

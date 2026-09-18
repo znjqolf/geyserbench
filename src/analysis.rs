@@ -1,4 +1,7 @@
-use crate::utils::{Comparator, TransactionData, percentile};
+use crate::{
+    config::{ArgsCommitment, Endpoint, EndpointKind},
+    utils::{Comparator, TransactionData, percentile},
+};
 use comfy_table::{ContentArrangement, Table};
 use serde_json::{Map, Value, json};
 use std::cmp::Ordering;
@@ -129,7 +132,7 @@ pub fn display_run_summary(summary: &RunSummary) {
     if !summary.has_data {
         println!("Not enough data");
     } else {
-	let fastest_name_ref = summary.fastest_endpoint.as_deref();
+        let fastest_name_ref = summary.fastest_endpoint.as_deref();
         let mut summary_rows: Vec<&EndpointSummary> = summary.endpoints.iter().collect();
         summary_rows.sort_by(|a, b| compare_latency(a, b));
 
@@ -225,6 +228,77 @@ fn diff_ms(tx: &TransactionData, first_tx: &TransactionData) -> f64 {
     delta.as_secs_f64() * 1_000.0
 }
 
+// Keep the existing per-endpoint latency metrics unchanged. This separate table
+// preserves the sign of processed_receive_time - deshred_receive_time.
+pub fn display_deshred_deltas(
+    comparator: &Comparator,
+    endpoints: &[Endpoint],
+    commitment: ArgsCommitment,
+) {
+    if !matches!(commitment, ArgsCommitment::Processed) {
+        return;
+    }
+    let mut table = Table::new();
+    table.load_preset(table_preset());
+    table.set_header(vec![
+        "Deshred",
+        "Processed",
+        "Matched Tx",
+        "Δt P50 ms",
+        "Δt P95 ms",
+        "Δt P99 ms",
+    ]);
+    let mut has_pairs = false;
+    for deshred in endpoints.iter().filter(|e| e.kind == EndpointKind::Deshred) {
+        for processed in endpoints
+            .iter()
+            .filter(|e| e.kind == EndpointKind::Yellowstone)
+        {
+            has_pairs = true;
+            let deltas = deshred_deltas(comparator, &deshred.name, &processed.name);
+            table.add_row(vec![
+                deshred.name.clone(),
+                processed.name.clone(),
+                deltas.len().to_string(),
+                format_latency_value((!deltas.is_empty()).then(|| percentile(&deltas, 0.5))),
+                format_latency_value((!deltas.is_empty()).then(|| percentile(&deltas, 0.95))),
+                format_latency_value((!deltas.is_empty()).then(|| percentile(&deltas, 0.99))),
+            ]);
+        }
+    }
+    if has_pairs {
+        println!(
+            "\nΔt = processed receive time - deshred receive time (positive: deshred earlier)"
+        );
+        println!("{table}");
+    }
+}
+
+fn deshred_deltas(comparator: &Comparator, deshred: &str, processed: &str) -> Vec<f64> {
+    let mut deltas = Vec::new();
+    for entry in comparator.iter() {
+        let (Some(deshred), Some(processed)) =
+            (entry.value().get(deshred), entry.value().get(processed))
+        else {
+            continue;
+        };
+        if deshred.wallclock_secs < deshred.start_wallclock_secs
+            || processed.wallclock_secs < processed.start_wallclock_secs
+        {
+            continue;
+        }
+        let d = deshred.elapsed_since_start;
+        let p = processed.elapsed_since_start;
+        deltas.push(if p >= d {
+            (p - d).as_secs_f64() * 1_000.0
+        } else {
+            -(d - p).as_secs_f64() * 1_000.0
+        });
+    }
+    deltas.sort_by(f64::total_cmp);
+    deltas
+}
+
 fn build_summary(
     endpoint: String,
     stats: EndpointStats,
@@ -276,5 +350,46 @@ fn format_percent(value: f64) -> String {
         format!("{:.2}", value * 100.0)
     } else {
         "—".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deshred_delta_preserves_sign_and_excludes_unmatched_and_backfill() {
+        let comparator = Comparator::new();
+        let data = |millis| TransactionData {
+            elapsed_since_start: Duration::from_millis(millis),
+            wallclock_secs: 100.0,
+            start_wallclock_secs: 99.0,
+        };
+        for (signature, d, p) in [("positive", 10, 25), ("negative", 30, 20), ("tie", 40, 40)] {
+            comparator.record_observation("deshred", signature, data(d), 2);
+            comparator.record_observation("processed", signature, data(p), 2);
+        }
+        comparator.record_observation("deshred", "unmatched", data(1), 2);
+        comparator.record_observation("processed", "other-unmatched", data(100), 2);
+        comparator.record_observation(
+            "deshred",
+            "historical",
+            TransactionData {
+                wallclock_secs: 98.0,
+                ..data(1)
+            },
+            2,
+        );
+        comparator.record_observation("processed", "historical", data(10), 2);
+        // Later repeated observations must not replace the earliest receive time.
+        comparator.record_observation("deshred", "positive", data(100), 2);
+        assert_eq!(
+            deshred_deltas(&comparator, "deshred", "processed"),
+            vec![-10.0, 0.0, 15.0]
+        );
+        let summary = compute_run_summary(&comparator, &["deshred".into(), "processed".into()]);
+        assert_eq!(summary.total_signatures, 3);
+        assert_eq!(summary.backfill_signatures, 1);
+        assert!(summary.endpoints.iter().all(|e| e.valid_transactions == 3));
     }
 }

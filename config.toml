@@ -4,11 +4,13 @@ account = "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA"
 commitment = "processed"
 
 [[endpoint]]
-name = "Endpoint 1"
-url = "http://arpc.fra.corvus-labs.io:20202"
-kind = "arpc"
+name = "Agave Deshred"
+url = "http://127.0.0.1:10002"
+kind = "deshred"
+x_token = ""
 
 [[endpoint]]
-name = "Endpoint 2"
-url = "http://fra.corvus-labs.io:10101"
+name = "Local Processed"
+url = "http://127.0.0.1:10002"
 kind = "yellowstone"
+x_token = ""

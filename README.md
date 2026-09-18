@@ -68,7 +68,60 @@ kind = "yellowstone"
 - `config.transactions` sets how many signatures to evaluate (backend streaming automatically disables itself for extremely large runs).
 - `config.account` is the pubkey monitored for transactions during the benchmark.
 - `config.commitment` accepts `processed`, `confirmed`, or `finalized`.
-- Repeat `[[endpoint]]` blocks for each feed. Supported `kind` values: `yellowstone`, `arpc`, `thor`, `shredstream`, `shreder`, and `jetstream`. `x_token` is optional.
+- Repeat `[[endpoint]]` blocks for each feed. Supported `kind` values: `yellowstone`, `deshred`, `arpc`, `thor`, `shredstream`, `shreder`, and `jetstream`. Use a unique `name` for each endpoint. `x_token` is optional; an empty token is omitted.
+
+## Agave 4.2.2: deshred versus processed
+
+The client uses `yellowstone-grpc-client 13.5.1` and `yellowstone-grpc-proto 12.7.0`.
+The proto version matches the Yellowstone [Agave 4.2.2 release](https://github.com/rpcpool/yellowstone-grpc/releases/tag/v15.2.1%2Bsolana.4.2.2);
+the client includes the latest published patch. The server must enable deshred
+transaction notifications and implement `SubscribeDeshred`.
+
+The checked-in `config.toml` is ready for a local server exposing both RPCs:
+
+```toml
+[config]
+transactions = 1000
+account = "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA"
+commitment = "processed"
+
+[[endpoint]]
+name = "Agave Deshred"
+url = "http://127.0.0.1:10002"
+kind = "deshred"
+x_token = ""
+
+[[endpoint]]
+name = "Local Processed"
+url = "http://127.0.0.1:10002"
+kind = "yellowstone"
+x_token = ""
+```
+
+```bash
+cargo build --release
+./target/release/geyserbench --config config.toml --private
+```
+
+`deshred` calls `SubscribeDeshred`; `yellowstone` calls `Subscribe` with the configured
+commitment. Deshred has no commitment or execution metadata. Both use the server's
+`account_include` transaction filter, including ALT-loaded accounts, without a
+second static-key filter. Votes and failed transactions are not excluded.
+
+Receive timestamps are captured immediately after the decoded stream message becomes
+available, before inspecting the transaction, encoding the signature or writing logs.
+Comparisons use a shared monotonic clock, never the server's `created_at` timestamp.
+The earliest observation of each signature is retained. Progress and the existing
+First%, P50/P95/P99 and Valid Tx table count signatures seen by every configured endpoint.
+Transactions seen only by deshred do not advance the target.
+
+With `commitment = "processed"`, an additional table reports signed P50/P95/P99 of
+`Δt = processed_receive_time - deshred_receive_time` for each deshred/Yellowstone pair,
+using only signatures present in both streams. Positive values mean deshred arrived
+earlier; negative values mean processed arrived earlier. The original table continues
+to report nonnegative delays relative to the first endpoint for each signature.
+The signed delta table is local output; the backend metrics format is unchanged.
+These are client arrival differences, including transport and scheduling latency.
 
 ## CLI Options
 

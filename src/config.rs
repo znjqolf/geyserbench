@@ -43,6 +43,7 @@ pub struct BackendSettings {
 #[serde(rename_all = "lowercase")]
 pub enum EndpointKind {
     Yellowstone,
+    Deshred,
     Arpc,
     Thor,
     Shredstream,
@@ -83,6 +84,7 @@ impl EndpointKind {
     pub fn as_str(&self) -> &'static str {
         match self {
             EndpointKind::Yellowstone => "yellowstone",
+            EndpointKind::Deshred => "deshred",
             EndpointKind::Arpc => "arpc",
             EndpointKind::Thor => "thor",
             EndpointKind::Shredstream => "shredstream",

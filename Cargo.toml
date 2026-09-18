@@ -33,6 +33,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 crossbeam-queue = "0.3"
 thiserror = "1"
 thorstreamer-grpc-client = "0.1.3"
+yellowstone-grpc-client = "=13.5.1"
+yellowstone-grpc-proto = "=12.7.0"
 
 [build-dependencies]
 tonic-prost-build = "0.14"
